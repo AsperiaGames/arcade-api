@@ -286,16 +286,42 @@ func credit(ctx context.Context, tx pgx.Tx, userID string, amount int64, counter
 	return balance, nil
 }
 
-func insertReceipt(
-	ctx context.Context, tx pgx.Tx, userID string, t ReceiptType,
-	amount, balanceAfter int64, meta Meta, idempotencyKey *string,
-) error {
+// marshalMeta encodes receipt context, normalising nil to an empty object so the
+// jsonb column never holds SQL NULL.
+func marshalMeta(meta Meta) ([]byte, error) {
 	if meta == nil {
 		meta = Meta{}
 	}
 	raw, err := json.Marshal(meta)
 	if err != nil {
-		return fmt.Errorf("encode receipt meta: %w", err)
+		return nil, fmt.Errorf("encode receipt meta: %w", err)
+	}
+	return raw, nil
+}
+
+// mergeMeta overlays extra onto stored meta. Used when a hold is committed: the
+// hold captured what it could at debit time, and the caller supplies whatever it
+// only learned afterwards — a purchase id, typically.
+func mergeMeta(stored []byte, extra Meta) (Meta, error) {
+	out := Meta{}
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &out); err != nil {
+			return nil, fmt.Errorf("decode stored meta: %w", err)
+		}
+	}
+	for k, v := range extra {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func insertReceipt(
+	ctx context.Context, tx pgx.Tx, userID string, t ReceiptType,
+	amount, balanceAfter int64, meta Meta, idempotencyKey *string,
+) error {
+	raw, err := marshalMeta(meta)
+	if err != nil {
+		return err
 	}
 
 	const q = `
@@ -305,6 +331,28 @@ func insertReceipt(
 		return fmt.Errorf("insert receipt: %w", err)
 	}
 	return nil
+}
+
+// insertReceiptReturningID is insertReceipt for callers that need to link the
+// row afterwards — holds record which receipt settled them.
+func insertReceiptReturningID(
+	ctx context.Context, tx pgx.Tx, userID string, t ReceiptType,
+	amount, balanceAfter int64, meta Meta,
+) (int64, error) {
+	raw, err := marshalMeta(meta)
+	if err != nil {
+		return 0, err
+	}
+
+	const q = `
+		INSERT INTO receipts (user_id, type, amount, balance_after, meta)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`
+	var id int64
+	if err := tx.QueryRow(ctx, q, userID, string(t), amount, balanceAfter, raw).Scan(&id); err != nil {
+		return 0, fmt.Errorf("insert receipt: %w", err)
+	}
+	return id, nil
 }
 
 func (l *Ledger) load(ctx context.Context, tx pgx.Tx, userID string) (Account, error) {
