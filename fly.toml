@@ -1,0 +1,45 @@
+# Fly.io deployment. Mirrors the house pattern used by blog-portfolio and
+# omnipress-api: port 8080, forced HTTPS, scale to zero when idle.
+#
+# Set the app name and region before the first deploy:
+#   fly launch --no-deploy --name arcade-api --region sjc
+
+app = 'arcade-api'
+primary_region = 'sjc'   # co-locate with blog-portfolio and the Neon database
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '8080'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  # Scale to zero when idle. Note this stacks with Neon's autosuspend: the first
+  # request after a quiet period wakes both. Tolerable for earn (the arcade
+  # client is async with a localStorage fallback), noticeable on a balance read.
+  # Raise to 1 if that shows up in practice.
+  min_machines_running = 0
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    soft_limit = 200
+    hard_limit = 250
+
+[[http_service.checks]]
+  interval = '30s'
+  timeout = '5s'
+  grace_period = '10s'
+  method = 'GET'
+  path = '/health'
+
+[[vm]]
+  # A static Go binary idles around 15MB resident. 256MB is generous headroom
+  # and the smallest shared tier.
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256

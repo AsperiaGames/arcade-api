@@ -114,9 +114,71 @@ Verified working state at the time of writing:
 
 - `ok github.com/HoseaCodes/arcade-api/internal/ledger 6.842s`
 
+## HTTP API
+
+Player routes take a Storm-Gate RS256 JWT, verified locally against the published
+JWKS — there is no shared signing secret. Errors are always `{"msg": "..."}`:
+blog-portfolio's React app and 13 arcade game builds parse these exact shapes, and
+none of them can be redeployed on this service's schedule.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/health` | Open. Reports `version` and `commit`. |
+| `GET` | `/api/points/balance` | |
+| `GET` | `/api/points/transactions?limit=` | Default 50, capped at 200 |
+| `POST` | `/api/points/earn` | `429` once the daily budget is spent |
+| `POST` | `/api/points/spend` | `402` carries `balance` and `required` |
+| `POST` | `/api/points/sync` | One-shot offline claim; `409` if already used |
+| `POST` | `/api/points/claim-guest` | Moves an anonymous balance onto the account |
+
+Service routes take `SERVICE_TOKEN`, compared in constant time. A player JWT is
+**never** accepted here — that boundary is all that stands between a browser and
+arbitrary balance mutation.
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/internal/credit` | Requires `idempotencyKey`; replays return `applied: false` |
+| `POST` | `/internal/holds` | Debits up front |
+| `POST` | `/internal/holds/{id}/commit` | Writes the receipt |
+| `POST` | `/internal/holds/{id}/release` | Returns the points |
+
+### Why 429 on the daily cap
+
+Not 400. The arcade client already maps that status to `daily-cap` and stops
+retrying, where a 400 reads as a malformed request and gets retried. Choosing the
+status the existing client already understands is what let the cap ship without
+redeploying 13 game builds.
+
+### Why holds rather than spend-then-refund
+
+blog-portfolio still owns purchases in MongoDB, so a debit here and a purchase row
+there cannot share a transaction. Spend-then-refund breaks precisely when the
+*refund* is the call that fails — the player is left short with no recovery path
+from the caller's side. An expiring hold heals with nobody online.
+
+## Deployment
+
+Fly.io, matching the house pattern used by blog-portfolio: port 8080, forced HTTPS,
+scale to zero. `make deploy` builds remotely and ships; `make status` reads `/health`
+to show what is actually running.
+
+Postgres is **Neon** rather than Fly Postgres — managed instead of self-operated,
+and its database branching lets a migration be rehearsed against a copy of
+production and then discarded.
+
+Use Neon's **direct** endpoint, not the pooled one. The pooler runs PgBouncer in
+transaction mode, which breaks pgx's default extended protocol with prepared
+statements, and long-lived Fly machines already pool through pgxpool.
+
+One thing to watch: `min_machines_running = 0` stacks with Neon's autosuspend, so
+the first request after an idle period wakes both. Fine for earn — the arcade client
+is asynchronous with a localStorage fallback — but noticeable on a balance read.
+
 ## Notes
 
-This repo is the data and accounting core behind the arcade rewards system. The surrounding HTTP authentication and service wiring are expected to be completed by the application entrypoint or deployment layer that consumes these packages.
+This repo owns the points ledger and the game-side surface. Everything that *uses*
+points — products, purchases, the redeem store, AI-art, PayPal — stays in
+blog-portfolio and reaches the balance through `/internal`.
 
 ## License
 

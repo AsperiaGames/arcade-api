@@ -1,32 +1,12 @@
-# Go build artifacts
-/bin/
-/build/
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-coverage.out
-coverage.html
+# Build output
+/server
+/out
+/dist
 
-# OS / editor files
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Environment and secrets
+# Local configuration — never commit real credentials
 .env
-.env.*
-!.env.example
+.env.local
 
-# Local runtime data
-/tmp/
-*.log
-postgres-data/
-
-# Generated or local-only folders
-vendor/
+# Go coverage
+*.out
+coverage.html

@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal ./migrations)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # Tests start their own throwaway Postgres via testcontainers, which works
+      # on GitHub runners because Docker is already available. Nothing to stand
+      # up in a services: block, and no second copy of the schema for CI.
+      - name: Test
+        run: go test ./... -race
+
+      # The deployed artifact is the image, so build it here rather than
+      # discovering a Dockerfile problem at deploy time.
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg VERSION=ci-${{ github.sha }} \
+            --build-arg COMMIT=${{ github.sha }} \
+            -t arcade-api:ci .
