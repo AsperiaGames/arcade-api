@@ -1,0 +1,32 @@
+# Go build artifacts
+/bin/
+/build/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+/tmp/
+*.log
+postgres-data/
+
+# Generated or local-only folders
+vendor/
