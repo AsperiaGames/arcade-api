@@ -71,7 +71,7 @@ func TestMain(m *testing.M) {
 // newLedger returns a ledger over a freshly emptied schema.
 func newLedger(t *testing.T) *ledger.Ledger {
 	t.Helper()
-	const truncate = `TRUNCATE receipts, holds, earn_windows, guest_earnings, accounts RESTART IDENTITY CASCADE`
+	const truncate = `TRUNCATE scores, game_sessions, receipts, holds, earn_windows, guest_earnings, accounts RESTART IDENTITY CASCADE`
 	if _, err := testPool.Exec(context.Background(), truncate); err != nil {
 		t.Fatalf("reset schema: %v", err)
 	}

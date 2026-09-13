@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/HoseaCodes/arcade-api/internal/arcade"
 	"github.com/HoseaCodes/arcade-api/internal/auth"
 	"github.com/HoseaCodes/arcade-api/internal/config"
 	"github.com/HoseaCodes/arcade-api/internal/ledger"
@@ -28,12 +29,13 @@ import (
 type Server struct {
 	cfg      config.Config
 	ledger   *ledger.Ledger
+	arcade   *arcade.Arcade
 	verifier *auth.Verifier
 	log      *slog.Logger
 }
 
-func New(cfg config.Config, l *ledger.Ledger, v *auth.Verifier, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, ledger: l, verifier: v, log: log}
+func New(cfg config.Config, l *ledger.Ledger, a *arcade.Arcade, v *auth.Verifier, log *slog.Logger) *Server {
+	return &Server{cfg: cfg, ledger: l, arcade: a, verifier: v, log: log}
 }
 
 // Routes builds the handler tree.
@@ -59,6 +61,19 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/spend", s.handleSpend)
 		r.Post("/sync", s.handleSync)
 		r.Post("/claim-guest", s.handleClaimGuest)
+	})
+
+	r.Route("/api/arcade", func(r chi.Router) {
+		// Leaderboards are public: they are a showcase, and requiring a token to
+		// see who is winning would defeat the point.
+		r.Get("/leaderboard", s.handleGlobalLeaderboard)
+		r.Get("/leaderboard/{gameID}", s.handleGameLeaderboard)
+
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireUser(s.verifier, writeError))
+			r.Post("/sessions", s.handleStartSession)
+			r.Post("/sessions/{sessionID}/settle", s.handleSettleSession)
+		})
 	})
 
 	r.Route("/internal", func(r chi.Router) {

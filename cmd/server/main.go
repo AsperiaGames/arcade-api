@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/HoseaCodes/arcade-api/internal/arcade"
 	"github.com/HoseaCodes/arcade-api/internal/auth"
 	"github.com/HoseaCodes/arcade-api/internal/config"
 	"github.com/HoseaCodes/arcade-api/internal/httpapi"
@@ -63,11 +64,16 @@ func run() error {
 	// Token verification needs no shared secret: Storm-Gate publishes a JWKS and
 	// this verifies RS256 signatures locally. The key set is fetched lazily, so
 	// a cold Storm-Gate cannot stop this service from starting.
+	// Sessions and leaderboards sit on top of the ledger rather than beside it:
+	// a settled session awards points through Earn, so the daily budget and every
+	// ledger invariant still apply.
+	games := arcade.New(pool, l)
+
 	verifier := auth.NewVerifier(ctx, cfg.StormGateURL, "")
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: httpapi.New(cfg, l, verifier, log).Routes(),
+		Handler: httpapi.New(cfg, l, games, verifier, log).Routes(),
 
 		// Explicit timeouts: the default zero values mean "wait forever", which
 		// on a public endpoint is how a handful of slow clients exhaust the

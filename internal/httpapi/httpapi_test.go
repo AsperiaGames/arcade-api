@@ -21,6 +21,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/HoseaCodes/arcade-api/internal/arcade"
 	"github.com/HoseaCodes/arcade-api/internal/auth"
 	"github.com/HoseaCodes/arcade-api/internal/config"
 	"github.com/HoseaCodes/arcade-api/internal/httpapi"
@@ -141,7 +142,7 @@ func TestMain(m *testing.M) {
 // newServer returns a handler over a freshly emptied schema.
 func newServer(t *testing.T) http.Handler {
 	t.Helper()
-	const truncate = `TRUNCATE receipts, holds, earn_windows, guest_earnings, accounts RESTART IDENTITY CASCADE`
+	const truncate = `TRUNCATE scores, game_sessions, receipts, holds, earn_windows, guest_earnings, accounts RESTART IDENTITY CASCADE`
 	if _, err := testPool.Exec(context.Background(), truncate); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -157,9 +158,10 @@ func newServer(t *testing.T) http.Handler {
 		HoldTTL:         time.Minute,
 	}
 	l := ledger.New(testPool, cfg.MaxDailyEarn, cfg.HoldTTL)
+	games := arcade.New(testPool, l)
 	v := auth.NewVerifier(context.Background(), issuer.url, "")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpapi.New(cfg, l, v, log).Routes()
+	return httpapi.New(cfg, l, games, v, log).Routes()
 }
 
 type response struct {
