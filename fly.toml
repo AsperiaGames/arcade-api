@@ -4,7 +4,7 @@
 # Set the app name and region before the first deploy:
 #   fly launch --no-deploy --name arcade-api --region sjc
 
-app = 'arcade-api'
+app = 'ac-arcade-api'
 primary_region = 'sjc'   # co-locate with blog-portfolio and the Neon database
 
 [build]
