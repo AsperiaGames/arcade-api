@@ -4,7 +4,10 @@
 # `make` with no argument prints this help.
 
 IMAGE_NAME  := arcade-api
-FLY_APP     := arcade-api
+# Must match `app` in fly.toml. `make logs` and `make status` address the
+# deployed app by this name, so a mismatch fails against a name that simply
+# does not exist rather than reporting anything useful.
+FLY_APP     := ac-arcade-api
 VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS     := -s -w \
