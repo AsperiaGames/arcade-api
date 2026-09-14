@@ -130,7 +130,7 @@ func TestEarnCreditsAndRecordsReceipt(t *testing.T) {
 	ctx := context.Background()
 	seed(t, l, "u1", 0)
 
-	acct, err := l.Earn(ctx, "u1", 40, ledger.Meta{"gameId": "pac-man"})
+	acct, _, err := l.Earn(ctx, "u1", 40, ledger.Meta{"gameId": "pac-man"})
 	if err != nil {
 		t.Fatalf("earn: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestEarnRejectsAboveDailyCap(t *testing.T) {
 	ctx := context.Background()
 	seed(t, l, "u1", 0)
 
-	if _, err := l.Earn(ctx, "u1", maxDailyEarn+1, nil); !errors.Is(err, ledger.ErrDailyCap) {
+	if _, _, err := l.Earn(ctx, "u1", maxDailyEarn+1, nil); !errors.Is(err, ledger.ErrDailyCap) {
 		t.Fatalf("err = %v, want ErrDailyCap", err)
 	}
 	if acct := mustAccount(t, l, "u1"); acct.Balance != 0 {
@@ -288,13 +288,13 @@ func TestEarnExhaustsDailyBudget(t *testing.T) {
 	ctx := context.Background()
 	seed(t, l, "u1", 0)
 
-	if _, err := l.Earn(ctx, "u1", 60, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "u1", 60, nil); err != nil {
 		t.Fatalf("first earn: %v", err)
 	}
-	if _, err := l.Earn(ctx, "u1", 40, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "u1", 40, nil); err != nil {
 		t.Fatalf("second earn (exactly at cap): %v", err)
 	}
-	if _, err := l.Earn(ctx, "u1", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
+	if _, _, err := l.Earn(ctx, "u1", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
 		t.Fatalf("third earn err = %v, want ErrDailyCap", err)
 	}
 
@@ -324,7 +324,7 @@ func TestEarnConcurrentCannotExceedDailyCap(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := l.Earn(ctx, "u1", amount, nil)
+			_, _, err := l.Earn(ctx, "u1", amount, nil)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
@@ -358,13 +358,13 @@ func TestEarnBudgetIsPerUser(t *testing.T) {
 	seed(t, l, "a", 0)
 	seed(t, l, "b", 0)
 
-	if _, err := l.Earn(ctx, "a", maxDailyEarn, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "a", maxDailyEarn, nil); err != nil {
 		t.Fatalf("a earn: %v", err)
 	}
-	if _, err := l.Earn(ctx, "a", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
+	if _, _, err := l.Earn(ctx, "a", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
 		t.Fatalf("a should be capped, got %v", err)
 	}
-	if _, err := l.Earn(ctx, "b", 50, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "b", 50, nil); err != nil {
 		t.Fatalf("b should be unaffected by a's cap: %v", err)
 	}
 }
@@ -376,15 +376,15 @@ func TestEarnBudgetResetsNextDay(t *testing.T) {
 
 	day := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	l.SetClock(func() time.Time { return day })
-	if _, err := l.Earn(ctx, "u1", maxDailyEarn, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "u1", maxDailyEarn, nil); err != nil {
 		t.Fatalf("day one: %v", err)
 	}
-	if _, err := l.Earn(ctx, "u1", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
+	if _, _, err := l.Earn(ctx, "u1", 1, nil); !errors.Is(err, ledger.ErrDailyCap) {
 		t.Fatalf("day one should be exhausted, got %v", err)
 	}
 
 	l.SetClock(func() time.Time { return day.Add(24 * time.Hour) })
-	if _, err := l.Earn(ctx, "u1", 50, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "u1", 50, nil); err != nil {
 		t.Fatalf("day two should have a fresh budget: %v", err)
 	}
 	if acct := mustAccount(t, l, "u1"); acct.Balance != maxDailyEarn+50 {

@@ -279,6 +279,11 @@ func TestEarnCreditsAndReportsBalance(t *testing.T) {
 	if got := num(t, res.body, "balance"); got != 120 {
 		t.Errorf("balance = %v, want 120", got)
 	}
+	// blog-portfolio's clients have always been told how much of the day's
+	// budget is left; that field must survive the port.
+	if got := num(t, res.body, "remaining"); got != maxDailyEarn-120 {
+		t.Errorf("remaining = %v, want %d", got, maxDailyEarn-120)
+	}
 }
 
 func TestEarnRejectsAboveTheSingleCallCap(t *testing.T) {
@@ -310,6 +315,14 @@ func TestEarnReturns429WhenTheDailyBudgetIsGone(t *testing.T) {
 	}
 	if res.body["msg"] == nil {
 		t.Error("429 body has no msg field")
+	}
+	// The cap response carries the ceiling and how much of it is spent — the
+	// fields blog-portfolio's characterization suite asserts on.
+	if got := num(t, res.body, "cap"); got != maxDailyEarn {
+		t.Errorf("cap = %v, want %d", got, maxDailyEarn)
+	}
+	if got := num(t, res.body, "earnedToday"); got != maxDailyEarn {
+		t.Errorf("earnedToday = %v, want %d", got, maxDailyEarn)
 	}
 }
 

@@ -192,20 +192,26 @@ func (l *Ledger) Spend(ctx context.Context, userID string, amount int64, meta Me
 // is consumed cannot silently eat the player's allowance — the whole thing rolls
 // back together. The Node implementation needed an explicit compensating write
 // for exactly this case.
-func (l *Ledger) Earn(ctx context.Context, userID string, amount int64, meta Meta) (Account, error) {
+// The second return value is how much the user has earned in today's window
+// after this credit — the caller turns it into the `remaining` and `earnedToday`
+// fields blog-portfolio's clients have always been given.
+func (l *Ledger) Earn(ctx context.Context, userID string, amount int64, meta Meta) (Account, int64, error) {
 	if amount <= 0 {
-		return Account{}, fmt.Errorf("earn amount must be positive, got %d", amount)
+		return Account{}, 0, fmt.Errorf("earn amount must be positive, got %d", amount)
 	}
 	if amount > l.maxDailyEarn {
-		return Account{}, ErrDailyCap
+		return Account{}, 0, ErrDailyCap
 	}
 	if _, err := l.EnsureAccount(ctx, userID); err != nil {
-		return Account{}, err
+		return Account{}, 0, err
 	}
 
 	window := l.now().UTC().Format(time.DateOnly)
 
-	return l.inTx(ctx, func(tx pgx.Tx) (Account, error) {
+	// Captured out of the transaction closure so the amount earned today survives
+	// alongside the returned account.
+	var earnedToday int64
+	acct, err := l.inTx(ctx, func(tx pgx.Tx) (Account, error) {
 		// Consume the budget first: it is the cheaper rollback if the credit
 		// then fails, and it is the check most likely to reject.
 		const budget = `
@@ -215,7 +221,6 @@ func (l *Ledger) Earn(ctx context.Context, userID string, amount int64, meta Met
 			   SET earned = earn_windows.earned + EXCLUDED.earned
 			 WHERE earn_windows.earned + EXCLUDED.earned <= $4
 			RETURNING earned`
-		var earnedToday int64
 		err := tx.QueryRow(ctx, budget, userID, window, amount, l.maxDailyEarn).Scan(&earnedToday)
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The WHERE on DO UPDATE suppressed the write: today is full.
@@ -234,6 +239,24 @@ func (l *Ledger) Earn(ctx context.Context, userID string, amount int64, meta Met
 		}
 		return l.load(ctx, tx, userID)
 	})
+	return acct, earnedToday, err
+}
+
+// EarnedToday reports how much the user has earned in the current UTC day. The
+// earn path already returns this for a successful credit; this exists for the
+// daily-cap branch, where no budget row was written and the caller still needs
+// to tell the client how much of the day it has used.
+func (l *Ledger) EarnedToday(ctx context.Context, userID string) (int64, error) {
+	const q = `SELECT coalesce(earned, 0) FROM earn_windows WHERE user_id = $1 AND window_start = $2`
+	var earned int64
+	err := l.pool.QueryRow(ctx, q, userID, l.now().UTC().Format(time.DateOnly)).Scan(&earned)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("earned today: %w", err)
+	}
+	return earned, nil
 }
 
 // ---------------------------------------------------------------- internals

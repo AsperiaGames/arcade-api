@@ -167,7 +167,7 @@ func (a *Arcade) SettleSession(ctx context.Context, userID, sessionID string, sc
 	}
 
 	meta := ledger.Meta{"gameId": gameID, "sessionId": sessionID, "score": score}
-	acct, err := a.ledger.Earn(ctx, userID, points, meta)
+	acct, _, err := a.ledger.Earn(ctx, userID, points, meta)
 	if errors.Is(err, ledger.ErrDailyCap) {
 		// Not a failure: the run counted and is on the leaderboard, there is
 		// just no budget left today.

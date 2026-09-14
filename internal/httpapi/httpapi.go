@@ -83,6 +83,17 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/holds", s.handleCreateHold)
 		r.Post("/holds/{holdID}/commit", s.handleCommitHold)
 		r.Post("/holds/{holdID}/release", s.handleReleaseHold)
+
+		// User-scoped operations for a trusted backend acting on a player's
+		// behalf. These mirror the /api/points routes but take an explicit
+		// userId, so blog-portfolio's ledger facade can keep its userId-based
+		// interface while its storage moves here. POST, not GET, because the
+		// userId travels in the body rather than a query string.
+		r.Post("/balance", s.handleInternalBalance)
+		r.Post("/transactions", s.handleInternalTransactions)
+		r.Post("/earn", s.handleInternalEarn)
+		r.Post("/spend", s.handleInternalSpend)
+		r.Post("/sync", s.handleInternalSync)
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

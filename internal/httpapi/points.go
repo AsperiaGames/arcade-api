@@ -112,7 +112,7 @@ func (s *Server) handleEarn(w http.ResponseWriter, r *http.Request) {
 	if p.IsGuest {
 		balance, err := s.ledger.RecordGuestEarn(r.Context(), p.UserID, amount, guestEarningTTL)
 		if errors.Is(err, ledger.ErrDailyCap) {
-			s.writeDailyCap(w)
+			s.writeDailyCap(w, r, p.UserID)
 			return
 		}
 		if err != nil {
@@ -136,9 +136,9 @@ func (s *Server) handleEarn(w http.ResponseWriter, r *http.Request) {
 		meta["gameName"] = req.GameName
 	}
 
-	acct, err := s.ledger.Earn(r.Context(), p.UserID, amount, meta)
+	acct, earnedToday, err := s.ledger.Earn(r.Context(), p.UserID, amount, meta)
 	if errors.Is(err, ledger.ErrDailyCap) {
-		s.writeDailyCap(w)
+		s.writeDailyCap(w, r, p.UserID)
 		return
 	}
 	if err != nil {
@@ -147,19 +147,23 @@ func (s *Server) handleEarn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":   "success",
-		"credited": amount,
-		"balance":  acct.Balance,
+		"status":    "success",
+		"credited":  amount,
+		"balance":   acct.Balance,
+		"remaining": s.cfg.MaxDailyEarn - earnedToday,
 	})
 }
 
 // writeDailyCap emits 429 rather than 400 — the arcade client already maps that
 // status to `daily-cap` and stops retrying, where a 400 reads as a malformed
-// request and is retried.
-func (s *Server) writeDailyCap(w http.ResponseWriter) {
+// request and is retried. It carries `earnedToday` so a client can show how much
+// of the day's budget is spent; a read failure there is not worth failing the
+// response over, so it degrades to zero.
+func (s *Server) writeDailyCap(w http.ResponseWriter, r *http.Request, userID string) {
+	earned, _ := s.ledger.EarnedToday(r.Context(), userID)
 	writeErrorWith(w, http.StatusTooManyRequests,
 		fmt.Sprintf("Daily earn limit of %d reached", s.cfg.MaxDailyEarn),
-		map[string]any{"cap": s.cfg.MaxDailyEarn})
+		map[string]any{"cap": s.cfg.MaxDailyEarn, "earnedToday": earned})
 }
 
 type spendRequest struct {

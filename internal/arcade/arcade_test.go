@@ -309,7 +309,7 @@ func TestSettleAtTheDailyCapStillCountsTheScore(t *testing.T) {
 	a, l := newArcade(t)
 	ctx := context.Background()
 
-	if _, err := l.Earn(ctx, "u1", maxDailyEarn, nil); err != nil {
+	if _, _, err := l.Earn(ctx, "u1", maxDailyEarn, nil); err != nil {
 		t.Fatalf("exhaust budget: %v", err)
 	}
 
