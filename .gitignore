@@ -3,9 +3,14 @@
 /out
 /dist
 
-# Local configuration — never commit real credentials
+# Local configuration — never commit real credentials.
+# The glob is deliberately broad: .env.bak, .env.production and the like carry
+# exactly the same secrets as .env, and enumerating variants one at a time is
+# how one of them eventually gets committed. .env.example is the documented
+# template, so it is excepted.
 .env
-.env.local
+.env.*
+!.env.example
 
 # Go coverage
 *.out
