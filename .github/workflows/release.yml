@@ -1,0 +1,151 @@
+name: Release
+
+# Every push to main that carries a commit becomes a tagged release and a
+# deploy, in that order, so the version on /health is always a version that
+# exists on GitHub with notes attached.
+#
+# Requires one repository secret: FLY_API_TOKEN (`fly tokens create deploy`).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump — auto reads the conventional commits'
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      deploy:
+        description: 'Deploy to Fly.io after releasing'
+        type: boolean
+        default: true
+
+# One release at a time. Cancelling mid-flight is not an option here: a cancel
+# between the tag push and the deploy would leave a tag with nothing shipped.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  # The same checks pull requests run. Nothing is tagged until they pass.
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the tag, create the release
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      released: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The version comes from the tags and the notes from the commits since
+          # the last one, so the default shallow single-branch clone is no good.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Decide the version and write the notes
+        id: plan
+        env:
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          # Empty on a push, where the conventional commits decide on their own.
+          BUMP: ${{ inputs.bump }}
+        run: |
+          .github/scripts/release-plan.sh "${BUMP:-auto}" | tee -a "$GITHUB_OUTPUT"
+          echo "--- notes ---"
+          cat "$NOTES_FILE"
+
+      - name: Tag and publish
+        if: steps.plan.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Annotated, so `git describe` and the VERSION in the image agree.
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+          # --verify-tag rather than letting gh invent a tag: if the push above
+          # did not land, this should fail instead of releasing from thin air.
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file "$NOTES_FILE" \
+            --verify-tag
+
+      - name: Nothing to release
+        if: steps.plan.outputs.has_changes != 'true'
+        run: echo "::notice::No commits since ${{ steps.plan.outputs.previous }} — skipping the release and the deploy."
+
+  deploy:
+    needs: release
+    if: needs.release.outputs.released == 'true' && (github.event_name != 'workflow_dispatch' || inputs.deploy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: ${{ steps.app.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Deploy the tag, not the branch tip, so a push that lands mid-run
+          # cannot ship something the release notes do not describe.
+          ref: ${{ needs.release.outputs.version }}
+
+      - name: Check the deploy token is present
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN is not set. Create one with 'fly tokens create deploy -a ac-arcade-api' and add it as a repository secret."
+            exit 1
+          fi
+
+      - name: Read the app name from fly.toml
+        id: app
+        run: |
+          # Single source of truth: the Makefile and this workflow both address
+          # whatever fly.toml says, so renaming the app never needs a second edit.
+          name=$(sed -n "s/^app *= *'\(.*\)'/\1/p" fly.toml)
+          [ -n "$name" ] || { echo "::error::no app name in fly.toml"; exit 1; }
+          echo "name=$name" >>"$GITHUB_OUTPUT"
+          echo "url=https://$name.fly.dev" >>"$GITHUB_OUTPUT"
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          flyctl deploy --remote-only \
+            --build-arg VERSION="$VERSION" \
+            --build-arg COMMIT="$(git rev-parse --short HEAD)" \
+            --wait-timeout 300
+
+      - name: Verify the deployed version
+        env:
+          URL: ${{ steps.app.outputs.url }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # A green deploy only means the machines started. /health reports the
+          # version linked into the binary, which is what actually proves the
+          # release that was just tagged is the one now serving traffic.
+          for attempt in $(seq 1 12); do
+            body=$(curl -fsS --max-time 10 "$URL/health" || true)
+            deployed=$(printf '%s' "$body" | jq -r '.version // empty')
+            if [ "$deployed" = "$VERSION" ]; then
+              echo "::notice::$URL is serving $VERSION"
+              exit 0
+            fi
+            echo "attempt $attempt: serving '${deployed:-<no response>}', want $VERSION"
+            sleep 10
+          done
+          echo "::error::$URL never reported $VERSION"
+          exit 1

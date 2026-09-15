@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  # Pushes to main run these same checks through release.yml, which calls this
+  # workflow before it tags anything. Triggering on push here too would only run
+  # every job twice.
+  workflow_call:
 
 jobs:
   check:

@@ -91,8 +91,12 @@ check-env: ## Verify the tools and secrets a deploy needs
 	@flyctl auth whoami >/dev/null 2>&1 || { echo "not logged in: run 'flyctl auth login'"; exit 1; }
 	@echo "ready to deploy $(FLY_APP) at $(VERSION)"
 
+.PHONY: release-preview
+release-preview: ## Show the version and notes the next push to main would publish
+	@NOTES_FILE=$$(mktemp) sh -c '.github/scripts/release-plan.sh; echo; cat "$$NOTES_FILE"; rm -f "$$NOTES_FILE"'
+
 .PHONY: deploy
-deploy: check-env ## Deploy to Fly.io
+deploy: check-env ## Deploy to Fly.io (CI does this on every push to main)
 	flyctl deploy --remote-only \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT)

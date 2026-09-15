@@ -162,6 +162,32 @@ Fly.io, matching the house pattern used by blog-portfolio: port 8080, forced HTT
 scale to zero. `make deploy` builds remotely and ships; `make status` reads `/health`
 to show what is actually running.
 
+### Releases
+
+Deploying is normally not a thing anyone does by hand. Every push to `main` runs
+`.github/workflows/release.yml`, which runs the pull-request checks, tags a version,
+publishes a GitHub release with notes, and deploys that tag to Fly.
+
+The version comes from the commits since the last tag, read as
+[conventional commits](https://www.conventionalcommits.org): a breaking change bumps
+major, a `feat` bumps minor, anything else bumps patch. Below `1.0.0` a breaking
+change bumps minor instead — a stray `!` should not declare the API stable. Preview
+what the next push would publish:
+
+```bash
+make release-preview
+```
+
+`workflow_dispatch` on the same workflow takes a `bump` override (this is how
+`1.0.0` gets cut) and a `deploy` toggle for tagging without shipping.
+
+The deploy links the tag into the binary and then polls `/health` until it reports
+that version. A green `flyctl deploy` only means the machines started; this is what
+proves the release just tagged is the one serving traffic.
+
+One secret is required: **`FLY_API_TOKEN`**, a repository secret holding the output
+of `fly tokens create deploy -a ac-arcade-api`.
+
 Postgres is **Neon** rather than Fly Postgres — managed instead of self-operated,
 and its database branching lets a migration be rehearsed against a copy of
 production and then discarded.
