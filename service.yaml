@@ -1,0 +1,43 @@
+# OpsAtlas service catalog entry. Policy set 2026-09-12.1.
+#
+# Fields are deliberately absent rather than guessed — the catalog is believed,
+# so a wrong value is worse than a missing one. Still to fill in:
+#   spec.health.liveness         — only /health exists today; needs a separate
+#                                  restart-signal endpoint in the service first.
+#   spec.observability.serviceName — no OpenTelemetry setup in this repo yet.
+#   spec.operations.slo          — no availability target or window agreed.
+#   spec.operations.runbook      — no runbook written.
+#   spec.operations.contact      — no chat channel recorded.
+apiVersion: opsatlas.ambitiousconcepts.io/v1
+kind: Service
+metadata:
+  name: arcade-api
+  displayName: Arcade API
+  owner: asperia-games
+  repository: AsperiaGames/arcade-api
+  description: >-
+    Backend service for the arcade points ledger. Stores account balances,
+    l`ifetime totals, transaction receipts, and hold-based spend flows in
+    `PostgreSQL, and enforces the rules that prevent negative balances,
+    concurrent overdraws, and runaway earning.
+spec:
+  tier: 3
+  runtime: go
+  environments:
+    - name: production
+      url: https://ac-arcade-api.fly.dev
+    - name: local
+      url: http://localhost:8080
+  health:
+    readiness: /health
+  journeys:
+    - Earn arcade points
+    - Spend arcade points
+    - View points balance and lifetime totals
+    - Play a scored arcade session
+    - Claim guest earnings during sign-up
+  dependencies:
+    - name: postgres
+      kind: datastore
+    - name: storm-gate
+      kind: service
